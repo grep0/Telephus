@@ -97,10 +97,11 @@ class ManagedCassandraClientFactory(ReconnectingClientFactory):
     @defer.inlineCallbacks
     def submitRequest(self, proto):
         def reqError(err, req, d, r):
-            if isinstance(err, InvalidRequestException) or \
-               isinstance(err, InvalidThriftRequest) or r < 1:
+            if err.check(InvalidRequestException, InvalidThriftRequest) or r < 1:
                 d.errback(err)
                 self._pending.remove(d)
+                err.trap(Exception)
+                return None
             else:
                 self.queue.put((req, d, r))
             return err
@@ -114,8 +115,8 @@ class ManagedCassandraClientFactory(ReconnectingClientFactory):
         else:
             d = proto.submitRequest(request)
             retries -= 1
-            d.addErrback(reqError, request, deferred, retries)
-            d.addCallback(reqSuccess, deferred)
+            d.addCallbacks(callback=reqSuccess, callbackArgs=(deferred,),
+                           errback=reqError, errbackArgs=(request, deferred, retries))
         
     def pushRequest(self, request, retries=None):
         retries = retries or self.request_retries
