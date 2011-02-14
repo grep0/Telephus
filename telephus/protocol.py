@@ -81,7 +81,19 @@ class ManagedCassandraClientFactory(ReconnectingClientFactory):
             
     def clientConnectionFailed(self, connector, reason):
         ReconnectingClientFactory.clientConnectionFailed(self, connector, reason)
+        self.decrementRetries(reason)
         self._errback(reason)
+
+    def decrementRetries(self, reason):
+        q1 = defer.DeferredQueue(size=self.queue.size, backlog=self.queue.backlog)
+        while self.queue.pending:
+            req, d, r = self.queue.pending.pop()
+            if r>1:
+                q1.put((req, d, r-1))
+            else:
+                d.errback(reason)
+        q1.waiting = self.queue.waiting
+        self.queue = q1
 
     def clientIdle(self, proto):
         if proto not in self._protos:
